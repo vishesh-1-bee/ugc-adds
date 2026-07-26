@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { clerkMiddleware } from '@clerk/express'
 import clerkwebhook from "./controllers/clerk.js";
 import router from "./routes/userRoute.js";
+import projectRouter from "./routes/projectroutes.js";
 
 
 
@@ -23,6 +24,8 @@ app.get('/', (req:Request , res:Response) => {
 })
 
 app.use('/api/user' , router)
+
+app.use('/api/project' , projectRouter)
 
 app.listen(port , () => {
     console.log(`Server started on port ${port}`)

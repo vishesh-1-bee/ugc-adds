@@ -1,0 +1,15 @@
+import express from "express";
+import { createProject , createVideo, deleteProject, getAllPublishedProject, } from "../controllers/projectController.js";
+import { protect } from "../middleware/auth.js";
+import upload from "../config/multer.js";
+
+const projectRouter = express.Router();
+
+projectRouter.post('/create' ,upload.array('images' , 2) , protect ,createProject)
+projectRouter.post('/video'  , protect ,createVideo)
+
+projectRouter.get('/published' , getAllPublishedProject)
+
+projectRouter.delete('/:projectId' , deleteProject)
+
+export default projectRouter
