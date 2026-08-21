@@ -2,8 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { Menu, X, Sparkles, LogOut, User, ChevronDown, Zap } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { useTheme } from '../context/ThemeContext';
-import { Link } from 'react-router-dom';
-import { useUser, useClerk, SignedIn, SignedOut } from '@clerk/clerk-react';
+import { Link, useLocation } from 'react-router-dom';
+import { useUser, useClerk, SignedIn, SignedOut, useAuth } from '@clerk/clerk-react';
+import api from '../config/axios';
+import toast from 'react-hot-toast';
 
 function UserProfileDropdown() {
   const { isDark } = useTheme();
@@ -11,6 +13,8 @@ function UserProfileDropdown() {
   const { signOut } = useClerk();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+ 
+  
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -175,6 +179,10 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isDark } = useTheme();
   const { isSignedIn } = useUser();
+  const { getToken } = useAuth();
+  const [credits, setCredits] = useState(0);
+  const {pathname}= useLocation()
+ const {user}= useUser()
 
   const navLinks = [
     { label: 'Home', href: '/' },
@@ -184,6 +192,30 @@ export default function Navbar() {
     { label: 'Pricing', href: '#pricing' },
   ];
 
+
+  const getCredits = async ()=>{
+    try {
+      const token = await getToken()
+
+      const data = await api.get('/api/user/credit' ,{
+        headers:{
+          Authorization: `Bearer ${token}`
+        }
+      })
+      setCredits(data.data.credits)
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || error.message || "Failed to fetch credits")
+    }
+  } 
+  
+  useEffect(() => {
+    if (user) {
+      (async ()=>{
+        await getCredits()
+      })()
+    
+    }
+  }, [user , pathname]);
   return (
     <nav
       id="navbar"
@@ -271,7 +303,7 @@ export default function Navbar() {
               }}
             >
               <Zap size={12} fill="#9b82ff" />
-              <span>10 Credits</span>
+              <span>{credits}</span>
             </div>
             <UserProfileDropdown />
           </SignedIn>
@@ -341,7 +373,7 @@ export default function Navbar() {
 
             <SignedIn>
               <div className="h-[1px] w-full my-1" style={{ background: 'rgba(42,42,66,0.3)' }} />
-              <MobileUserSection onClose={() => setMobileOpen(false)} isDark={isDark} />
+              <MobileUserSection onClose={() => setMobileOpen(false)} isDark={isDark} credits={credits} />
             </SignedIn>
           </div>
         </div>
@@ -350,7 +382,7 @@ export default function Navbar() {
   );
 }
 
-function MobileUserSection({ onClose, isDark }: { onClose: () => void; isDark: boolean }) {
+function MobileUserSection({ onClose, isDark, credits }: { onClose: () => void; isDark: boolean; credits: number }) {
   const { user, isLoaded } = useUser();
   const { signOut } = useClerk();
 
@@ -396,7 +428,7 @@ function MobileUserSection({ onClose, isDark }: { onClose: () => void; isDark: b
       >
         <Zap size={14} fill="#9b82ff" color="#9b82ff" />
         <div className="flex-1">
-          <p className="text-xs font-semibold" style={{ color: '#9b82ff' }}>10 Credits remaining</p>
+          <p className="text-xs font-semibold" style={{ color: '#9b82ff' }}>{credits} Credits remaining</p>
           <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(155,130,255,0.2)' }}>
             <div className="h-full rounded-full" style={{ width: '100%', background: 'linear-gradient(90deg, #9b82ff, #ff6090)' }} />
           </div>

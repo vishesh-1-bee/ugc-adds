@@ -59,12 +59,11 @@ export const getprojectbyId = async (req:Request , res:Response)=>{
 
       const project = await prisma.project.findUnique({
         where:{
-            id:Array.isArray(projectId) ? projectId[0] : projectId,
-            userId
+            id:Array.isArray(projectId) ? projectId[0] : projectId
         }
       })
 
-      if(!project){
+      if(!project || project.userId !== userId){
           return res.status(404).json({message:"project not found"})
       }
 
@@ -89,12 +88,11 @@ export const publish = async (req:Request , res:Response)=>{
 
       const project = await prisma.project.findUnique({
         where:{
-            id:Array.isArray(projectId) ? projectId[0] : projectId,
-            userId
+            id:Array.isArray(projectId) ? projectId[0] : projectId
         }
       })
 
-      if(!project){
+      if(!project || project.userId !== userId){
           return res.status(404).json({message:"project not found"})
       }
 
@@ -106,8 +104,7 @@ export const publish = async (req:Request , res:Response)=>{
 
       await prisma.project.update({
         where:{
-          id:Array.isArray(projectId) ? projectId[0] : projectId,
-          userId
+          id:Array.isArray(projectId) ? projectId[0] : projectId
         },
         data:{
           isPublished:newPublishStatus
