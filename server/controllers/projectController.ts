@@ -19,7 +19,7 @@ const loadimage = (path: string, mimeType: string) => {
 
 
 export const createProject = async (req: Request, res: Response) => {
-    let tempprojectid: string
+    let tempprojectid: string | undefined = undefined;
     const { userId } = req.auth();
     let iscreditdeducted = false;
     const {
@@ -188,17 +188,19 @@ export const createProject = async (req: Request, res: Response) => {
 
     } catch (error: any) {
         console.error("createProject: Error during project generation:", error);
+        // Refund credits if they were deducted
         if (iscreditdeducted) {
-            await prisma.user.update(
-                {
-                    where: {
-                        id: userId
-                    },
-                    data: {
-                        credits: user.credits + 5
-                    }
-                }
-            )
+            await prisma.user.update({
+                where: { id: userId },
+                data: { credits: user.credits + 5 }
+            });
+        }
+        // Reset isGenerating so the user isn't permanently stuck
+        if (tempprojectid) {
+            await prisma.project.update({
+                where: { id: tempprojectid },
+                data: { isGenerating: false, error: error.message || 'Generation failed' }
+            }).catch(() => { /* ignore cleanup error */ });
         }
         return res.status(500).json({ message: "server error", error: error.message })
     }
@@ -215,7 +217,12 @@ export const createVideo = async (req: Request, res: Response) => {
         }
     })
 
-    if (!user || user.credits < 10) {
+    // Subscription gate — only paid users can generate videos
+    if (!user || !user.isPaid) {
+        return res.status(403).json({ message: "subscription_required" })
+    }
+
+    if (user.credits < 10) {
         return res.status(400).json({ message: "insufficient credits" })
     }
 
@@ -336,16 +343,21 @@ export const createVideo = async (req: Request, res: Response) => {
         })
 
     } catch (error: any) {
-        if(iscreditdeducted){
+        console.error("createVideo: Error during video generation:", error);
+        // Refund credits if they were deducted
+        if (iscreditdeducted) {
             await prisma.user.update({
-                where: {
-                    id: userId
-                },
-                data: {
-                    credits: user.credits + 10
-                }
-            })
-        } 
+                where: { id: userId },
+                data: { credits: user.credits + 10 }
+            });
+        }
+        // CRITICAL: Reset isGenerating so the user can retry — without this the
+        // project stays permanently stuck and every future call returns 400.
+        await prisma.project.update({
+            where: { id: projectId },
+            data: { isGenerating: false, error: error.message || 'Video generation failed' }
+        }).catch(() => { /* ignore cleanup error */ });
+
         return res.status(500).json({ message: "server error", error: error.message })
     }
 }

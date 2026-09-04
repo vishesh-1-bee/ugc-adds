@@ -3,7 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '@clerk/clerk-react';
 import {
-  ArrowLeft, Download, RefreshCw, Play, Loader2, Film, CheckCircle2, AlertCircle
+  ArrowLeft, Download, RefreshCw, Play, Loader2, Film, CheckCircle2, AlertCircle, Lock, Zap
 } from 'lucide-react';
 
 interface Project {
@@ -29,34 +29,36 @@ export default function Results() {
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isPaid, setIsPaid] = useState<boolean | null>(null);
 
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoGenerated, setVideoGenerated] = useState(false);
+  const [videoError, setVideoError] = useState('');
 
-  // Fetch the project data from the API
+  const BASE = import.meta.env.VITE_BASEURL || 'http://localhost:2000';
+
+  // Fetch the project data + subscription status in parallel
   useEffect(() => {
-    const fetchProject = async () => {
+    const load = async () => {
       try {
         const token = await getToken();
-        const response = await fetch(
-          `${import.meta.env.VITE_BASEURL || 'http://localhost:2000'}/api/project/${projectId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const headers = { Authorization: `Bearer ${token}` };
 
-        const data = await response.json();
+        const [projectRes, meRes] = await Promise.all([
+          fetch(`${BASE}/api/project/${projectId}`, { headers }),
+          fetch(`${BASE}/api/user/me`, { headers }),
+        ]);
 
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to load project');
-        }
+        const projectData = await projectRes.json();
+        const meData = await meRes.json();
 
-        setProject(data.project);
-        if (data.project.generatedVideo) {
-          setVideoGenerated(true);
-        }
+        if (!projectRes.ok) throw new Error(projectData.message || 'Failed to load project');
+
+        setProject(projectData.project);
+        if (projectData.project.generatedVideo) setVideoGenerated(true);
+
+        if (meRes.ok) setIsPaid(!!meData.isPaid);
+        else setIsPaid(false);
       } catch (err: any) {
         setError(err.message || 'Something went wrong');
       } finally {
@@ -64,17 +66,13 @@ export default function Results() {
       }
     };
 
-    if (projectId) {
-      fetchProject();
-    } else {
-      navigate('/create');
-    }
+    if (projectId) load();
+    else navigate('/create');
   }, [projectId, getToken, navigate]);
 
   // Handle downloading the generated image
   const handleDownloadImage = async () => {
     if (!project?.generatedImage) return;
-
     try {
       const response = await fetch(project.generatedImage);
       const blob = await response.blob();
@@ -85,7 +83,6 @@ export default function Results() {
       link.click();
       URL.revokeObjectURL(url);
     } catch {
-      // Fallback: open in new tab
       window.open(project.generatedImage, '_blank');
     }
   };
@@ -94,33 +91,32 @@ export default function Results() {
   const handleGenerateVideo = async () => {
     if (isGeneratingVideo || videoGenerated || !project) return;
     setIsGeneratingVideo(true);
+    setVideoError('');
 
     try {
       const token = await getToken();
-      const response = await fetch(
-        `${import.meta.env.VITE_BASEURL || 'http://localhost:2000'}/api/project/video`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ projectId: project.id }),
-        }
-      );
+      const response = await fetch(`${BASE}/api/project/video`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ projectId: project.id }),
+      });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Video generation failed');
+      if (response.status === 403 || data.message === 'subscription_required') {
+        navigate('/plan');
+        return;
       }
 
+      if (!response.ok) throw new Error(data.message || 'Video generation failed');
+
       setVideoGenerated(true);
-      setProject((prev) =>
-        prev ? { ...prev, generatedVideo: data.videoUrl } : prev
-      );
+      setProject((prev) => prev ? { ...prev, generatedVideo: data.videoUrl } : prev);
     } catch (err: any) {
-      setError(err.message || 'Video generation failed');
+      setVideoError(err.message || 'Video generation failed');
     } finally {
       setIsGeneratingVideo(false);
     }
@@ -129,7 +125,6 @@ export default function Results() {
   // Handle downloading the generated video
   const handleDownloadVideo = async () => {
     if (!project?.generatedVideo) return;
-
     try {
       const response = await fetch(project.generatedVideo);
       const blob = await response.blob();
@@ -186,20 +181,160 @@ export default function Results() {
     );
   }
 
+  // Video section: locked for free users
+  const VideoSection = () => {
+    if (!isPaid) {
+      // Locked state for free users
+      return (
+        <>
+          {/* Locked Video Card */}
+          <div
+            onClick={() => navigate('/plan')}
+            className="relative flex flex-col items-center justify-center gap-3 px-6 py-6 rounded-xl cursor-pointer overflow-hidden group transition-all duration-300"
+            style={{
+              background: isDark
+                ? 'rgba(155, 130, 255, 0.06)'
+                : 'rgba(155, 130, 255, 0.04)',
+              border: '1px dashed rgba(155, 130, 255, 0.4)',
+            }}
+          >
+            {/* Glow on hover */}
+            <div
+              className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+              style={{
+                background: 'radial-gradient(ellipse at center, rgba(155,130,255,0.12), transparent 70%)',
+              }}
+            />
+
+            <div
+              className="flex items-center justify-center w-12 h-12 rounded-full mb-1"
+              style={{
+                background: isDark ? 'rgba(155,130,255,0.15)' : 'rgba(155,130,255,0.1)',
+                border: '1px solid rgba(155,130,255,0.3)',
+              }}
+            >
+              <Lock size={22} style={{ color: '#9b82ff' }} />
+            </div>
+
+            <div className="text-center">
+              <p className="text-sm font-bold mb-0.5" style={{ color: isDark ? '#b4a4ff' : '#7c52e3' }}>
+                Video Generation
+              </p>
+              <p className="text-xs" style={{ color: isDark ? '#6e6c82' : '#9896a8' }}>
+                Available on Pro & Business plans
+              </p>
+            </div>
+
+            <div
+              className="flex items-center gap-2 mt-1 px-5 py-2 rounded-lg text-xs font-bold text-white transition-all duration-300 group-hover:scale-105"
+              style={{
+                background: 'linear-gradient(135deg, #9b82ff, #ff6090)',
+                boxShadow: '0 4px 20px -6px rgba(155,130,255,0.5)',
+              }}
+            >
+              <Zap size={13} />
+              Upgrade to Pro
+            </div>
+          </div>
+
+          {/* Locked download video button */}
+          <div
+            className="flex items-center justify-center gap-3 px-6 py-4 rounded-xl text-base font-semibold opacity-30 cursor-not-allowed select-none"
+            style={{
+              color: isDark ? '#6e6c82' : '#9896a8',
+              background: isDark ? 'rgba(42, 42, 66, 0.4)' : 'rgba(232, 230, 240, 0.6)',
+              border: `1px solid ${isDark ? 'rgba(42, 42, 66, 0.6)' : 'rgba(232, 230, 240, 0.8)'}`,
+            }}
+          >
+            <Play size={18} />
+            Download Video
+          </div>
+        </>
+      );
+    }
+
+    // Unlocked state for paid users
+    return (
+      <>
+        {/* Generate Video */}
+        <button
+          onClick={handleGenerateVideo}
+          disabled={isGeneratingVideo || videoGenerated || !project.generatedImage}
+          className="relative flex items-center justify-center gap-3 px-6 py-4 rounded-xl text-base font-semibold transition-all duration-300 hover:scale-[1.02] cursor-pointer disabled:cursor-not-allowed disabled:hover:scale-100 overflow-hidden"
+          style={{
+            color: videoGenerated
+              ? '#10b981'
+              : isDark ? '#b4a4ff' : '#7c52e3',
+            background: videoGenerated
+              ? isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.06)'
+              : isDark ? 'rgba(155, 130, 255, 0.1)' : 'rgba(155, 130, 255, 0.06)',
+            border: `1px solid ${
+              videoGenerated
+                ? 'rgba(16, 185, 129, 0.3)'
+                : 'rgba(155, 130, 255, 0.25)'
+            }`,
+          }}
+        >
+          <span className="relative z-10 flex items-center gap-3">
+            {isGeneratingVideo ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                Generating Video...
+              </>
+            ) : videoGenerated ? (
+              <>
+                <CheckCircle2 size={18} />
+                Video Generated
+              </>
+            ) : (
+              <>
+                <Film size={18} />
+                Generate Video
+              </>
+            )}
+          </span>
+        </button>
+
+        {/* Video error */}
+        {videoError && (
+          <p className="text-xs text-center font-medium" style={{ color: '#ff2d6f' }}>
+            {videoError}
+          </p>
+        )}
+
+        {/* Download Video */}
+        <button
+          onClick={handleDownloadVideo}
+          disabled={!videoGenerated || !project.generatedVideo}
+          className="flex items-center justify-center gap-3 px-6 py-4 rounded-xl text-base font-semibold transition-all duration-300 hover:scale-[1.02] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+          style={{
+            color: videoGenerated ? '#ffffff' : isDark ? '#6e6c82' : '#9896a8',
+            background: videoGenerated
+              ? 'linear-gradient(135deg, #ff6090, #ff8a20)'
+              : isDark ? 'rgba(42, 42, 66, 0.4)' : 'rgba(232, 230, 240, 0.6)',
+            border: videoGenerated
+              ? 'none'
+              : `1px solid ${isDark ? 'rgba(42, 42, 66, 0.6)' : 'rgba(232, 230, 240, 0.8)'}`,
+            boxShadow: videoGenerated ? '0 8px 32px -8px rgba(255, 96, 144, 0.4)' : 'none',
+          }}
+        >
+          <Play size={18} fill={videoGenerated ? 'currentColor' : 'none'} />
+          Download Video
+        </button>
+      </>
+    );
+  };
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-hero py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
       {/* Background Orbs */}
       <div
         className="absolute top-20 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-20 pointer-events-none"
-        style={{
-          background: 'radial-gradient(circle, rgba(155,130,255,0.3), transparent)',
-        }}
+        style={{ background: 'radial-gradient(circle, rgba(155,130,255,0.3), transparent)' }}
       />
       <div
         className="absolute bottom-10 right-1/4 w-[500px] h-[500px] rounded-full blur-3xl opacity-15 pointer-events-none"
-        style={{
-          background: 'radial-gradient(circle, rgba(255,96,144,0.2), transparent)',
-        }}
+        style={{ background: 'radial-gradient(circle, rgba(255,96,144,0.2), transparent)' }}
       />
 
       <div className="max-w-6xl mx-auto relative z-10">
@@ -243,7 +378,6 @@ export default function Results() {
                   style={{ display: 'block' }}
                 />
               ) : (
-                /* Still generating */
                 <div
                   className="w-full flex flex-col items-center justify-center gap-4"
                   style={{
@@ -258,13 +392,10 @@ export default function Results() {
                 </div>
               )}
 
-              {/* Subtle gradient overlay at the bottom of the image */}
               {project.generatedImage && (
                 <div
                   className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
-                  style={{
-                    background: 'linear-gradient(to top, rgba(0,0,0,0.35), transparent)',
-                  }}
+                  style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.35), transparent)' }}
                 />
               )}
             </div>
@@ -309,73 +440,14 @@ export default function Results() {
                 <div className="flex items-center gap-3 my-1">
                   <div className="flex-1 h-px" style={{ background: isDark ? 'rgba(42, 42, 66, 0.8)' : 'rgba(232, 230, 240, 0.8)' }} />
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: isDark ? '#6e6c82' : '#9896a8' }}>
-                    Video
+                    Video {!isPaid && <span style={{ color: '#9b82ff' }}>· Pro</span>}
                   </span>
                   <div className="flex-1 h-px" style={{ background: isDark ? 'rgba(42, 42, 66, 0.8)' : 'rgba(232, 230, 240, 0.8)' }} />
                 </div>
 
-                {/* 2. Generate Video */}
-                <button
-                  onClick={handleGenerateVideo}
-                  disabled={isGeneratingVideo || videoGenerated || !project.generatedImage}
-                  className="relative flex items-center justify-center gap-3 px-6 py-4 rounded-xl text-base font-semibold transition-all duration-300 hover:scale-[1.02] cursor-pointer disabled:cursor-not-allowed disabled:hover:scale-100 overflow-hidden"
-                  style={{
-                    color: videoGenerated
-                      ? '#10b981'
-                      : isDark ? '#b4a4ff' : '#7c52e3',
-                    background: videoGenerated
-                      ? isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.06)'
-                      : isDark ? 'rgba(155, 130, 255, 0.1)' : 'rgba(155, 130, 255, 0.06)',
-                    border: `1px solid ${
-                      videoGenerated
-                        ? 'rgba(16, 185, 129, 0.3)'
-                        : 'rgba(155, 130, 255, 0.25)'
-                    }`,
-                  }}
-                >
-                  <span className="relative z-10 flex items-center gap-3">
-                    {isGeneratingVideo ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" />
-                        Generating Video...
-                      </>
-                    ) : videoGenerated ? (
-                      <>
-                        <CheckCircle2 size={18} />
-                        Video Generated
-                      </>
-                    ) : (
-                      <>
-                        <Film size={18} />
-                        Generate Video
-                      </>
-                    )}
-                  </span>
-                </button>
+                {/* 2 & 3. Video section — locked or unlocked */}
+                <VideoSection />
 
-                {/* 3. Download Video */}
-                <button
-                  onClick={handleDownloadVideo}
-                  disabled={!videoGenerated || !project.generatedVideo}
-                  className="flex items-center justify-center gap-3 px-6 py-4 rounded-xl text-base font-semibold transition-all duration-300 hover:scale-[1.02] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-                  style={{
-                    color: videoGenerated
-                      ? '#ffffff'
-                      : isDark ? '#6e6c82' : '#9896a8',
-                    background: videoGenerated
-                      ? 'linear-gradient(135deg, #ff6090, #ff8a20)'
-                      : isDark ? 'rgba(42, 42, 66, 0.4)' : 'rgba(232, 230, 240, 0.6)',
-                    border: videoGenerated
-                      ? 'none'
-                      : `1px solid ${isDark ? 'rgba(42, 42, 66, 0.6)' : 'rgba(232, 230, 240, 0.8)'}`,
-                    boxShadow: videoGenerated
-                      ? '0 8px 32px -8px rgba(255, 96, 144, 0.4)'
-                      : 'none',
-                  }}
-                >
-                  <Play size={18} fill={videoGenerated ? 'currentColor' : 'none'} />
-                  Download Video
-                </button>
               </div>
             </div>
 

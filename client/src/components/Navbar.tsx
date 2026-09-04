@@ -189,7 +189,7 @@ export default function Navbar() {
     { label: 'Create', href: '/create' },
     { label: 'Community', href: '/community' },
     ...(isSignedIn ? [{ label: 'My Generations', href: '/my-generation' }] : []),
-    { label: 'Pricing', href: '#pricing' },
+    { label: 'Pricing', href: '/plan' },
   ];
 
 
