@@ -2,11 +2,14 @@ import { useState, useRef, DragEvent } from 'react';
 import { Upload, Trash2, Wand2, AlertCircle, RefreshCw } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
+import { useAuth, useUser } from '@clerk/clerk-react';
 
 export default function Generator() {
   const { isDark } = useTheme();
   const navigate = useNavigate();
-
+  const {user} = useUser();
+  const {getToken} = useAuth();
+ 
   // Form States
   const [projectName, setProjectName] = useState('');
   const [productName, setProductName] = useState('');
@@ -107,7 +110,7 @@ export default function Generator() {
   };
 
   // Form validation & submission simulation
-  const handleGenerate = (e: React.FormEvent) => {
+  const handleGenerate = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -133,21 +136,45 @@ export default function Generator() {
     setErrors({});
     setIsGenerating(true);
 
-    // Navigate to loading screen with current state after a brief delay
-    setTimeout(() => {
-      setIsGenerating(false);
-      navigate('/loading', {
-        state: {
-          projectName,
-          productName,
-          productDescription,
-          aspectRatio,
-          userPrompt,
-          productPreview,
-          modelPreview,
+    try {
+      const token = await getToken();
+      const formData = new FormData();
+
+      // Append images — backend expects field name 'images' via upload.array('images', 2)
+      formData.append('images', productImage as File);
+      formData.append('images', modelImage as File);
+
+      // Append text fields
+      formData.append('name', projectName);
+      formData.append('productName', productName);
+      formData.append('productDescription', productDescription);
+      formData.append('aspectRatio', aspectRatio);
+      formData.append('userPrompt', userPrompt);
+
+      const response = await fetch(
+        `${import.meta.env.VITE_BASEURL || 'http://localhost:2000'}/api/project/create`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
         }
-      });
-    }, 800);
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to generate image');
+      }
+
+      // Navigate to the results page with the real project ID
+      navigate(`/results/${data.projectId}`);
+    } catch (err: any) {
+      setErrors({ submit: err.message || 'Something went wrong. Please try again.' });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -531,6 +558,20 @@ export default function Generator() {
                 }}
               />
             </div>
+
+            {/* Submit Error Display */}
+            {errors.submit && (
+              <div className="mt-2 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium"
+                style={{
+                  background: 'rgba(255, 45, 111, 0.1)',
+                  border: '1px solid rgba(255, 45, 111, 0.3)',
+                  color: '#ff2d6f',
+                }}
+              >
+                <AlertCircle size={16} />
+                {errors.submit}
+              </div>
+            )}
 
             {/* Generate Button container */}
             <div className="mt-4 flex flex-col items-stretch sm:items-start">

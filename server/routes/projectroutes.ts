@@ -1,5 +1,5 @@
 import express from "express";
-import { createProject , createVideo, deleteProject, getAllPublishedProject, } from "../controllers/projectController.js";
+import { createProject , createVideo, deleteProject, getAllPublishedProject, getProject } from "../controllers/projectController.js";
 import { protect } from "../middleware/auth.js";
 import upload from "../config/multer.js";
 
@@ -9,6 +9,7 @@ projectRouter.post('/create' ,upload.array('images' , 2) , protect ,createProjec
 projectRouter.post('/video'  , protect ,createVideo)
 
 projectRouter.get('/published' , getAllPublishedProject)
+projectRouter.get('/:projectId' , protect , getProject)
 
 projectRouter.delete('/:projectId' , deleteProject)
 

@@ -19,7 +19,7 @@ const loadimage = (path: string, mimeType: string) => {
 
 
 export const createProject = async (req: Request, res: Response) => {
-    let tempprojectid: string
+    let tempprojectid: string | undefined = undefined;
     const { userId } = req.auth();
     let iscreditdeducted = false;
     const {
@@ -62,7 +62,7 @@ export const createProject = async (req: Request, res: Response) => {
 
 
     try {
-
+        console.log("createProject: Uploading images to Cloudinary...");
         let uploadedImages = await Promise.all(
             image.map(async (image: any) => {
                 let result = await cloudinary.uploader.upload(image.path, {
@@ -71,18 +71,19 @@ export const createProject = async (req: Request, res: Response) => {
                 return result.secure_url;
             })
         )
+        console.log("createProject: Images uploaded successfully:", uploadedImages);
 
+        console.log("createProject: Creating project record in Prisma database...");
         const project = await prisma.project.create({
             data: {
                 name, userId, productName, productDescription, userPrompt, aspectRatio,
                 targetLength: parseInt(targetLenght),
                 uploadedImages, isGenerating: true
-
-
             }
         })
 
         tempprojectid = project.id;
+        console.log("createProject: Project created in DB with ID:", project.id);
 
         const model = 'gemini-3-pro-image-preview'
 
@@ -119,8 +120,8 @@ export const createProject = async (req: Request, res: Response) => {
 
 
         //image to base64 structure fot the ai model
-        const iamg1base64 = loadimage(image[0].path, image[0].mimeType);
-        const image2base64 = loadimage(image[1].path, image[1].mimeType);
+        const iamg1base64 = loadimage(image[0].path, image[0].mimetype);
+        const image2base64 = loadimage(image[1].path, image[1].mimetype);
         const prompt = {
             text: `combine the person and product into a realistic photo.
             Make the person naturally hold or use the product.
@@ -130,7 +131,7 @@ export const createProject = async (req: Request, res: Response) => {
             ${userPrompt}`
         }
 
-        //gnerate the image using the ai model 
+        console.log("createProject: Calling Gemini AI models.generateContent...");
         const response: any = await ai.models.generateContent({
             model: model,
             contents: [iamg1base64, image2base64, prompt]
@@ -140,17 +141,16 @@ export const createProject = async (req: Request, res: Response) => {
 
         //check if the response is valid 
         if (!response?.candidates?.[0]?.content?.parts) {
+            console.error("createProject: Invalid response from AI model", response);
             return res.status(400).json({ message: "Invalid response from ai model " })
 
         }
         //if valid rexponse
 
-        console.log(response);
+        console.log("createProject: Received valid response from Gemini AI. Processing image parts...");
         const parts = response?.candidates?.[0]?.content?.parts
 
         let finalBuffer: Buffer | null = null
-
-
 
         for (const part of parts) {
             if (part.inlineData && part.inlineData.data) {
@@ -161,15 +161,18 @@ export const createProject = async (req: Request, res: Response) => {
         }
 
         if (!finalBuffer) {
+            console.error("createProject: No valid image data found in response parts.");
             return res.status(400).json({ message: "Invalid image data in response" })
         }
 
+        console.log("createProject: Uploading generated image base64 to Cloudinary...");
         const base64image = `data:image/png;base64,${finalBuffer.toString('base64')}`;
 
         const uploadImage = await cloudinary.uploader.upload(base64image, {
             resource_type: "image"
         })
 
+        console.log("createProject: Updating project in database with generated image URL...");
         await prisma.project.update({
             where: {
                 id: project.id
@@ -179,20 +182,25 @@ export const createProject = async (req: Request, res: Response) => {
                 isGenerating: false
             }
         })
+
+        console.log("createProject: Success! Returning project ID:", project.id);
         res.json({ projectId: project.id })
 
     } catch (error: any) {
+        console.error("createProject: Error during project generation:", error);
+        // Refund credits if they were deducted
         if (iscreditdeducted) {
-            await prisma.user.update(
-                {
-                    where: {
-                        id: userId
-                    },
-                    data: {
-                        credits: user.credits + 5
-                    }
-                }
-            )
+            await prisma.user.update({
+                where: { id: userId },
+                data: { credits: user.credits + 5 }
+            });
+        }
+        // Reset isGenerating so the user isn't permanently stuck
+        if (tempprojectid) {
+            await prisma.project.update({
+                where: { id: tempprojectid },
+                data: { isGenerating: false, error: error.message || 'Generation failed' }
+            }).catch(() => { /* ignore cleanup error */ });
         }
         return res.status(500).json({ message: "server error", error: error.message })
     }
@@ -209,7 +217,12 @@ export const createVideo = async (req: Request, res: Response) => {
         }
     })
 
-    if (!user || user.credits < 10) {
+    // Subscription gate — only paid users can generate videos
+    if (!user || !user.isPaid) {
+        return res.status(403).json({ message: "subscription_required" })
+    }
+
+    if (user.credits < 10) {
         return res.status(400).json({ message: "insufficient credits" })
     }
 
@@ -295,13 +308,13 @@ export const createVideo = async (req: Request, res: Response) => {
 
         fs.mkdirSync('videos', { recursive: true })
 
-        if (!operation.response.generatedVideo) {
+        if (!operation.response.generatedVideos) {
             throw new Error("No video data available")
         }
 
         //download the video 
         await ai.files.download({
-            file: operation.response.generatedVideo[0].video,
+            file: operation.response.generatedVideos[0].video,
             downloadPath: filepath
         })
 
@@ -330,20 +343,46 @@ export const createVideo = async (req: Request, res: Response) => {
         })
 
     } catch (error: any) {
-        if(iscreditdeducted){
+        console.error("createVideo: Error during video generation:", error);
+        // Refund credits if they were deducted
+        if (iscreditdeducted) {
             await prisma.user.update({
-                where: {
-                    id: userId
-                },
-                data: {
-                    credits: user.credits + 10
-                }
-            })
-        } 
+                where: { id: userId },
+                data: { credits: user.credits + 10 }
+            });
+        }
+        // CRITICAL: Reset isGenerating so the user can retry — without this the
+        // project stays permanently stuck and every future call returns 400.
+        await prisma.project.update({
+            where: { id: projectId },
+            data: { isGenerating: false, error: error.message || 'Video generation failed' }
+        }).catch(() => { /* ignore cleanup error */ });
+
         return res.status(500).json({ message: "server error", error: error.message })
     }
 }
 
+
+export const getProject = async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.auth();
+        const { projectId } = req.params;
+
+        const project = await prisma.project.findUnique({
+            where: {
+                id: Array.isArray(projectId) ? projectId[0] : projectId
+            }
+        });
+
+        if (!project || project.userId !== userId) {
+            return res.status(404).json({ message: "Project not found" });
+        }
+
+        return res.json({ project });
+    } catch (error: any) {
+        return res.status(500).json({ message: "server error", error: error.message });
+    }
+}
 
 export const getAllPublishedProject = async (req: Request, res: Response) => {
     try {

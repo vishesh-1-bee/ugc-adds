@@ -1,6 +1,30 @@
 import { Request , Response } from "express"
 import { prisma } from "../config/prisma.js";
-//to get the user credits 
+
+// Returns full user info (credits + subscription status) for the client
+export const getMe = async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.auth();
+
+        if (!userId) {
+            return res.status(401).json({ message: "unauthorized" })
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { credits: true, isPaid: true }
+        })
+
+        if (!user) {
+            return res.status(404).json({ message: "user not found" })
+        }
+
+        return res.status(200).json({ credits: user.credits, isPaid: user.isPaid })
+    } catch (error: any) {
+        return res.status(500).json({ message: "server error", error: error.message })
+    }
+}
+
 export const getusercredit = async (req:Request , res:Response)=>{
     try {
         const {userId}= req.auth();
@@ -59,12 +83,11 @@ export const getprojectbyId = async (req:Request , res:Response)=>{
 
       const project = await prisma.project.findUnique({
         where:{
-            id:Array.isArray(projectId) ? projectId[0] : projectId,
-            userId
+            id:Array.isArray(projectId) ? projectId[0] : projectId
         }
       })
 
-      if(!project){
+      if(!project || project.userId !== userId){
           return res.status(404).json({message:"project not found"})
       }
 
@@ -89,12 +112,11 @@ export const publish = async (req:Request , res:Response)=>{
 
       const project = await prisma.project.findUnique({
         where:{
-            id:Array.isArray(projectId) ? projectId[0] : projectId,
-            userId
+            id:Array.isArray(projectId) ? projectId[0] : projectId
         }
       })
 
-      if(!project){
+      if(!project || project.userId !== userId){
           return res.status(404).json({message:"project not found"})
       }
 
@@ -106,8 +128,7 @@ export const publish = async (req:Request , res:Response)=>{
 
       await prisma.project.update({
         where:{
-          id:Array.isArray(projectId) ? projectId[0] : projectId,
-          userId
+          id:Array.isArray(projectId) ? projectId[0] : projectId
         },
         data:{
           isPublished:newPublishStatus

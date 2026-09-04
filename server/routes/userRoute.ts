@@ -1,8 +1,10 @@
 import { Express , Router } from "express";
 import { protect } from "../middleware/auth.js";
-import { getallprojects, getprojectbyId, getusercredit, publish } from "../controllers/userController.js";
+import { getallprojects, getMe, getprojectbyId, getusercredit, publish } from "../controllers/userController.js";
 
 const router = Router();
+
+router.get('/me' , protect , getMe)
 
 router.get('/credit' , protect , getusercredit)
 
