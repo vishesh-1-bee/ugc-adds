@@ -1,6 +1,6 @@
-import { useNavigate } from "react-router-dom";
+
 import { Project } from "../types";
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const ProjectCard = ({
   gen,
