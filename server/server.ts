@@ -13,7 +13,15 @@ const port = process.env.PORT || 3000;
 
 //middleware 
 app.use(cors());
-app.post('/api/clerk' , express.raw({type: "application/json"}) ,clerkwebhook)
+app.post(
+  "/api/clerk",
+  express.raw({ type: "application/json" }),
+  (req, res, next) => {
+    console.log("🔥🔥 CLERK POST REQUEST RECEIVED");
+    next();
+  },
+  clerkwebhook
+);
  app.use(express.json());
  app.use(clerkMiddleware())
 
