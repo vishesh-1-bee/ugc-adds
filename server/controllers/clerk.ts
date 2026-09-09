@@ -2,6 +2,7 @@ import {Request,Response} from 'express'
 import { verifyWebhook } from '@clerk/express/webhooks'
 import { prisma } from '../config/prisma.js';
 const clerkwebhook = async (req:Request , res:Response) => {
+     console.log("🔥🔥 WEBHOOK CONTROLLER HIT");
     try {
         const evt : any = await verifyWebhook(req)
         //getting data from the body 

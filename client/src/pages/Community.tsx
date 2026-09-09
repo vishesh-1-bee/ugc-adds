@@ -43,7 +43,7 @@ const Community = () => {
         {/* Masonry Layout */}
         <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 [column-fill:_balance] w-full">
             {projects.map((project) => (
-                <ProjectCard key={project.id} gen={project} setGeneration={setProjects} forCommnity={true} />
+                <ProjectCard key={project.id} gen={project} />
             ))}
         </div>
     </div>
