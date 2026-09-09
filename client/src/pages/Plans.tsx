@@ -255,7 +255,6 @@ export default function Plans() {
                     {/* Feature list */}
                     <ul className="flex flex-col gap-3 mb-8 flex-1">
                       {plan.features.map((feature, fi) => {
-                        const FIcon = feature.icon;
                         return (
                           <li key={fi} className="flex items-center gap-3">
                             <div

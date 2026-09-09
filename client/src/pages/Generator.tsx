@@ -2,12 +2,11 @@ import { useState, useRef, DragEvent } from 'react';
 import { Upload, Trash2, Wand2, AlertCircle, RefreshCw } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
-import { useAuth, useUser } from '@clerk/clerk-react';
+import { useAuth} from '@clerk/clerk-react';
 
 export default function Generator() {
   const { isDark } = useTheme();
   const navigate = useNavigate();
-  const {user} = useUser();
   const {getToken} = useAuth();
  
   // Form States

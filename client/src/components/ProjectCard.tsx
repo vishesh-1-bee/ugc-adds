@@ -4,14 +4,12 @@ import React, { useState, useRef, useEffect } from "react";
 
 const ProjectCard = ({
   gen,
-  setGeneration,
-  forCommnity = false,
+ 
 }: {
   gen: Project;
-  setGeneration: React.Dispatch<React.SetStateAction<Project[]>>;
-  forCommnity?: boolean;
+ 
 }) => {
-  const navigate = useNavigate();
+  
   const [isHovered, setIsHovered] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
